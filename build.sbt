@@ -10,6 +10,7 @@ lazy val root = (project in file(".")).
     name := "csvtool",
     libraryDependencies ++= Seq(
       scalaTest % Test,
-      "com.fasterxml.jackson.module" %% "jackson-module-scala" % "2.9.6"
+      "com.fasterxml.jackson.module" %% "jackson-module-scala" % "2.9.6",
+      "com.fasterxml.jackson.dataformat" % "jackson-dataformat-yaml" % "2.9.6"
     )
-  )
+  ).enablePlugins(JavaAppPackaging)

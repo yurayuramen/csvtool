@@ -1,4 +1,8 @@
 /project/target/*
+/project/project/target/*
 /target/*
 /.idea/*
 !/target/.gitkeep
+/tmp/*
+!/tmp/.gitkeep
+!/tmp/test.csv
