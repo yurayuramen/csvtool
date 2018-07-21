@@ -16,15 +16,12 @@ object CSVJacksonHelper{
 class CSVJacksonHelper(val objectMapper:ObjectMapper) {
 
   def jsonAsString(dataSet:DataSet)={
-
     val headers = dataSet.headers
-
     val seq=
     dataSet.rows.map{row=>
       ListMap(headers.map{name=> name -> row(name)}:_*)
     }
     objectMapper.writeValueAsString(seq)
-
   }
 
 

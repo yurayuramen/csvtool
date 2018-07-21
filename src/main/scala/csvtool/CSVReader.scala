@@ -1,17 +1,30 @@
 package csvtool
 
+import csvtool.CSVReader.LineFeedCodes
+import csvtool.CSVReader.LineFeedCodes.LineFeedCode
+
 import scala.annotation.tailrec
 import scala.collection.mutable.ArrayBuffer
 import scala.io.Source
 
 object CSVReader{
 
-  sealed trait Status
-  case object NewLine extends Status
-  case object OutOfToken extends Status
-  case object InToken extends Status
-  case object InTokenQuote extends Status
-  case object InTokenQuoteExitPending extends Status
+  object Statuses {
+    sealed trait Status
+    case object NewLine extends Status
+    case object OutOfToken extends Status
+    case object InToken extends Status
+    case object InTokenQuote extends Status
+    case object InTokenQuoteExitPending extends Status
+
+  }
+
+  object LineFeedCodes{
+    sealed trait LineFeedCode
+    case object Windows extends LineFeedCode
+    case object Linux extends LineFeedCode
+    case object ClassicMac extends LineFeedCode
+  }
 
 }
 
@@ -21,20 +34,16 @@ object CSVReader{
   *                           None:列サイズの調整をしない
   *                           Some:列サイズの調整をする。Someで内包している値を調整値として設定
   */
-class CSVReader(colSizeAdjustValue:Option[String]=Some("")) {
+class CSVReader(colSizeAdjustValue:Option[String]=Some(""),separator:Char=',',linefeed:LineFeedCode = LineFeedCodes.Windows) {
 
-  import CSVReader._
+  import CSVReader.Statuses._
+  import CSVReader.LineFeedCodes._
 
   def parseInternal(source:Source): Seq[Seq[String]] ={
-
-
-
 
     val rows = ArrayBuffer.empty[Seq[String]]
     var currentRow:ArrayBuffer[String] = null
     var currentToken:StringBuilder = null
-
-
     var status:Status = NewLine
 
     def toNewLine(): Unit ={
@@ -50,89 +59,84 @@ class CSVReader(colSizeAdjustValue:Option[String]=Some("")) {
       status = OutOfToken
     }
 
-    val newLineChars = Seq('\r','\n')
-    def isNewLine(aChar:Char)=newLineChars.contains(aChar)
-    def isQuote(aChar:Char) = aChar == '"'
-    def isComma(aChar:Char) = aChar == ','
+    val newLineChars =
+      linefeed match{
+        case Linux=>
+          Seq('\n')
+        case ClassicMac=>
+          Seq('\r')
+        case Windows=>
+          Seq('\r','\n')
+      }
+    def isNewLine()(implicit aChar:Char)=newLineChars.contains(aChar)
+    def isQuote()(implicit aChar:Char) = aChar == '"'
+    def isSeparator()(implicit aChar:Char) = aChar == separator
 
     val iterator = source.toIterator
 
 
     @tailrec
     def fetch(){
-      if(iterator.hasNext) {
-        val aChar = iterator.next()
-        status match {
-          case NewLine =>
-            if (isNewLine(aChar)) {
-              //TODO 空行
-            }
-            else {
-              currentRow = ArrayBuffer.empty
-              currentToken = new StringBuilder
-              if (isQuote(aChar)) {
-                status = InTokenQuote
-              }
-              else {
-                currentToken += aChar
-                status = InToken
-              }
-            }
-          case InToken =>
-            if (isNewLine(aChar)) {
-
-              currentRow += currentToken.toString()
-              toNewLine()
-            }
-            else if (isComma(aChar)) {
-              toOutOfToken()
-            }
+      if(!iterator.hasNext) return
+      implicit val aChar = iterator.next()
+      status match {
+        case NewLine =>
+          if (!isNewLine())
+          {
+            currentRow = ArrayBuffer.empty
+            currentToken = new StringBuilder
+            if (isQuote()) status = InTokenQuote
             else {
               currentToken += aChar
+              status = InToken
             }
-          case InTokenQuote =>
-            if (isQuote(aChar)) {
-              status = InTokenQuoteExitPending
-            }
-            else {
-              currentToken += aChar
-            }
-          case InTokenQuoteExitPending =>
-            if (isNewLine(aChar)) {
-
-              currentRow += currentToken.toString()
-              toNewLine()
-            }
-            else if (isComma(aChar)) {
-              toOutOfToken()
-            }
-            else if (isQuote(aChar)) {
-              currentToken += aChar
+          }
+        case InToken =>
+          if (isNewLine()) {
+            currentRow += currentToken.toString()
+            toNewLine()
+          }
+          else if (isSeparator())
+            toOutOfToken()
+          else
+            currentToken += aChar
+        case InTokenQuote =>
+          if (isQuote())
+            status = InTokenQuoteExitPending
+          else
+            currentToken += aChar
+        case InTokenQuoteExitPending =>
+          if (isNewLine()) {
+            currentRow += currentToken.toString()
+            toNewLine()
+          }
+          else if (isSeparator())
+            toOutOfToken()
+          else if (isQuote()) {
+            currentToken += aChar
+            status = InTokenQuote
+          }
+          else
+            throw new IllegalStateException(s"quoteの次に想定外の文字が来てます:${aChar}")
+        case OutOfToken =>
+          if (isNewLine()) {
+            currentRow += ""
+            toNewLine()
+          }
+          else if (isSeparator())
+            currentRow += ""
+          else {
+            currentToken = new StringBuilder
+            if (isQuote())
               status = InTokenQuote
-            }
             else {
-              throw new IllegalStateException(s"quoteの次に想定外の文字が来てます:${aChar}")
+              currentToken += aChar
+              status = InToken
             }
-          case OutOfToken =>
-            if (isNewLine(aChar)) {
-
-              currentRow += ""
-              toNewLine()
-            }
-            else {
-              currentToken = new StringBuilder
-              if (isQuote(aChar)) {
-                status = InTokenQuote
-              }
-              else {
-                currentToken += aChar
-                status = InToken
-              }
-            }
-        }//match
-        fetch()
-      }//
-    }//def
+          }
+      }//match
+      fetch()
+    }//def fetch
 
     fetch()
 
@@ -147,35 +151,29 @@ class CSVReader(colSizeAdjustValue:Option[String]=Some("")) {
       case InTokenQuoteExitPending =>
         currentRow += currentToken.toString()
         toNewLine()
-      case InTokenQuote =>
-        throw new IllegalStateException(s"quoteで始まった" )
-
     }
     rows.toSeq
   }
 
+  private[this] def adjustColSize(rows:Seq[Seq[String]],colSize:Int)=
+    colSizeAdjustValue.fold(rows)(colSizeAdjustValue=>
+      rows.map {row=> row ++ (0 until colSize - row.size).map(_ => colSizeAdjustValue)}
+    )
+
+
+
   def parseWithHeader(source:Source)={
     val rows = parseInternal(source)
-
     val headers = rows.head
-
     val colSize = headers.size
-
-    val dataRows =
-      colSizeAdjustValue.fold{rows.tail}{colSizeAdjustValue=>
-        rows.tail.map {row=> row ++ (0 until colSize - row.size).map(_ => colSizeAdjustValue)}
-      }
-
+    val dataRows = adjustColSize(rows.tail,colSize)
     new DataSet(headers,dataRows)
   }
 
   def parse(source:Source)={
-
     val rows = parseInternal(source)
     val maxColSize = rows.map(_.size).max
-    colSizeAdjustValue.fold{rows}{colSizeAdjustValue=>
-      rows.map {row=> row ++ (0 until maxColSize - row.size).map(_ => colSizeAdjustValue)}
-    }
+    adjustColSize(rows,maxColSize)
   }
 
 

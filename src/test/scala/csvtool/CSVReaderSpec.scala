@@ -25,6 +25,23 @@ class CSVReaderSpec extends WordSpec with MustMatchers{
       dataSet.rows.map(_.data) mustBe Seq(Seq("1","2","3"),Seq("4","5","6"))
     }
 
+    "separator連打" in{
+
+      val source = s"""
+                      |col1,col2,col3
+                      |1,,3
+                      |4,5,6""".stripMargin
+
+      val csvReader = new CSVReader()
+
+      val dataSet = csvReader.parseWithHeader(Source.fromString(source))
+
+      println(dataSet)
+      dataSet.headers mustBe Seq("col1","col2","col3")
+      dataSet.rows.size mustBe 2
+      dataSet.rows.map(_.data) mustBe Seq(Seq("1","","3"),Seq("4","5","6"))
+    }
+
     "Quote区切りあり" in{
 
       val source = s"""
@@ -62,7 +79,7 @@ class CSVReaderSpec extends WordSpec with MustMatchers{
       dataSet.rows.size mustBe 4
 
       import scala.collection.immutable.Seq
-      dataSet.rows.map(_.data) mustBe Seq(Seq("1","2\r\naa\"aa\r\ncccc","3"),Seq("4","5",""),Seq("7","8","9"),Seq("10","","")) //,Seq("11","",""))
+      dataSet.rows.map(_.data) mustBe Seq(Seq("1","2\naa\"aa\ncccc","3"),Seq("4","5",""),Seq("7","8","9"),Seq("10","","")) //,Seq("11","",""))
     }
 
     "adjust機能off" in{
@@ -85,8 +102,42 @@ class CSVReaderSpec extends WordSpec with MustMatchers{
 
       dataSet.headers mustBe Seq("col1","col2","col3")
       dataSet.rows.size mustBe 5
-      dataSet.rows.map(_.data) mustBe Seq(Seq("1","2\r\naa\"aa\r\ncccc","3"),Seq("4","5",""),Seq("7","8","9"),Seq("10",""),Seq("11"))
+      dataSet.rows.map(_.data) mustBe Seq(Seq("1","2\naa\"aa\ncccc","3"),Seq("4","5",""),Seq("7","8","9"),Seq("10",""),Seq("11"))
     }
   }
+  "TSV" must {
 
+    "ノーマル" in {
+
+      val source =  "col1\tcol2\tcol3\n" ++
+        "1\t2\t3\n" ++
+        "4\t5\t6\n"
+
+      val csvReader = new CSVReader(separator = '\t')
+
+      val dataSet = csvReader.parseWithHeader(Source.fromString(source))
+
+      println(dataSet)
+      dataSet.headers mustBe Seq("col1", "col2", "col3")
+      dataSet.rows.size mustBe 2
+      dataSet.rows.map(_.data) mustBe Seq(Seq("1", "2", "3"), Seq("4", "5", "6"))
+    }
+
+    "セパレータ連打" in {
+
+      val source =  "col1\tcol2\tcol3\n" ++
+        "1\t\t3\n" ++
+        "4\t5\t6\n"
+
+      val csvReader = new CSVReader(separator = '\t')
+
+      val dataSet = csvReader.parseWithHeader(Source.fromString(source))
+
+      println(dataSet)
+      dataSet.headers mustBe Seq("col1", "col2", "col3")
+      dataSet.rows.size mustBe 2
+      dataSet.rows.map(_.data) mustBe Seq(Seq("1", "", "3"), Seq("4", "5", "6"))
+    }
+
+  }
 }
