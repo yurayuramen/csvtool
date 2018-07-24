@@ -34,7 +34,7 @@ object CSVReader{
   *                           None:列サイズの調整をしない
   *                           Some:列サイズの調整をする。Someで内包している値を調整値として設定
   */
-class CSVReader(colSizeAdjustValue:Option[String]=Some(""),separator:Char=',',linefeed:LineFeedCode = LineFeedCodes.Windows) {
+class CSVReader(colSizeAdjustValue:Option[String]=Some(""),separator:Char=',',linefeed:LineFeedCode = LineFeedCodes.Windows,transport:Boolean=false,skipColumns:Seq[Int]=Nil,skipRows:Seq[Int]=Nil,allEmptyRowSkip:Boolean=false) {
 
   import CSVReader.Statuses._
   import CSVReader.LineFeedCodes._
@@ -86,6 +86,7 @@ class CSVReader(colSizeAdjustValue:Option[String]=Some(""),separator:Char=',',li
             currentRow = ArrayBuffer.empty
             currentToken = new StringBuilder
             if (isQuote()) status = InTokenQuote
+            else if (isSeparator())  toOutOfToken()
             else {
               currentToken += aChar
               status = InToken
@@ -152,7 +153,23 @@ class CSVReader(colSizeAdjustValue:Option[String]=Some(""),separator:Char=',',li
         currentRow += currentToken.toString()
         toNewLine()
     }
-    rows.toSeq
+    rows.toSeq.zipWithIndex.filterNot{case(_,rowIndex)=> skipRows.contains(rowIndex)}.map(_._1).map{_.zipWithIndex.filterNot{case(_,colIndex)=> skipColumns.contains(colIndex)}.map(_._1)}
+  }
+
+  private[this] def transport(source:Seq[Seq[String]]): Seq[Seq[String]] ={
+
+    if(this.transport)
+    {
+      val rowSize = source.size
+      val colSize = source(0).size
+      (0 until colSize).map{colIndex=>
+        (0 until rowSize).map { rowIndex =>
+          source(rowIndex)(colIndex)
+        }
+      }
+    }
+    else
+      source
   }
 
   private[this] def adjustColSize(rows:Seq[Seq[String]],colSize:Int)=
@@ -163,17 +180,31 @@ class CSVReader(colSizeAdjustValue:Option[String]=Some(""),separator:Char=',',li
 
 
   def parseWithHeader(source:Source)={
-    val rows = parseInternal(source)
+    val rows1 = parseInternal(source)
+    val rows = transport(rows1)
     val headers = rows.head
     val colSize = headers.size
     val dataRows = adjustColSize(rows.tail,colSize)
-    new DataSet(headers,dataRows)
+
+    val dataRows2=
+    if(allEmptyRowSkip){
+      dataRows.filterNot(_.forall(_.isEmpty))
+    }
+    else
+      dataRows
+
+    new DataSet(headers,dataRows2)
   }
 
   def parse(source:Source)={
     val rows = parseInternal(source)
     val maxColSize = rows.map(_.size).max
-    adjustColSize(rows,maxColSize)
+    val rows2 = transport(adjustColSize(rows,maxColSize))
+    if(allEmptyRowSkip){
+      rows2.filterNot(_.forall(_.isEmpty))
+    }
+    else
+      rows2
   }
 
 
